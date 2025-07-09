@@ -1,5 +1,7 @@
 import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
+import 'package:flutter/foundation.dart';
 import '../models/medicine.dart';
 import '../models/treatment_history.dart';
 import '../models/allergy.dart';
@@ -12,40 +14,99 @@ class DatabaseService {
   factory DatabaseService() => _instance;
   DatabaseService._internal();
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    
+  // Initialize database factory for different platforms
+  Future<void> _initializeDatabaseFactory() async {
     try {
+      print('🔧 Initializing database factory...');
+      
+      if (kIsWeb) {
+        throw Exception('SQLite is not supported on web platform');
+      }
+      
+      // Check if we're running on desktop platforms
+      if (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.macOS) {
+        print('🖥️ Desktop platform detected, using sqflite_ffi');
+        
+        // Initialize the ffi loader if needed.
+        sqfliteFfiInit();
+        
+        // Change the default factory
+        databaseFactory = databaseFactoryFfi;
+        print('✅ Database factory set to databaseFactoryFfi');
+      } else {
+        print('📱 Mobile platform detected, using default sqflite');
+        // Use default factory for mobile platforms
+      }
+      
+      print('✅ Database factory initialized successfully');
+    } catch (e) {
+      print('❌ Database factory initialization failed: $e');
+      rethrow;
+    }
+  }
+
+  // Initialize database
+  Future<void> initialize() async {
+    try {
+      print('🔧 Initializing database...');
+      
+      if (_database != null && _isInitialized) {
+        print('✅ Database already initialized');
+        return;
+      }
+      
+      // Initialize database factory first
+      await _initializeDatabaseFactory();
+      
       _database = await _initDatabase();
       _isInitialized = true;
+      print('✅ Database initialized successfully');
+    } catch (e) {
+      print('❌ Database initialization failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<Database> get database async {
+    if (_database != null && _isInitialized) {
+      return _database!;
+    }
+    
+    try {
+      await initialize();
       return _database!;
     } catch (e) {
-      print('Database initialization error: $e');
-      throw Exception('Failed to initialize database: $e');
+      print('❌ Database access error: $e');
+      throw Exception('Failed to access database: $e');
     }
   }
 
   Future<Database> _initDatabase() async {
     try {
-      print('🗄️ Getting database path...');
-      String path = join(await getDatabasesPath(), 'medicine_tracker.db');
+      print('🗄️ Setting up database...');
+      
+      // Get database path
+      final dbPath = await getDatabasesPath();
+      final path = join(dbPath, 'medicine_tracker.db');
       print('📁 Database path: $path');
       
-      print('🔧 Opening database...');
+      // Open database
       final db = await openDatabase(
         path,
         version: 2,
         onCreate: _createTables,
         onUpgrade: _upgradeTables,
         onOpen: (db) {
-          print('✅ Database opened successfully');
+          print('✅ Database connection opened');
         },
       );
       
-      print('✅ Database initialized successfully');
+      print('✅ Database setup completed');
       return db;
     } catch (e) {
-      print('❌ Database initialization failed: $e');
+      print('❌ Database setup failed: $e');
       rethrow;
     }
   }
@@ -157,21 +218,48 @@ class DatabaseService {
   // Helper method to check if database is ready
   Future<bool> isDatabaseReady() async {
     try {
+      if (!_isInitialized || _database == null) {
+        await initialize();
+      }
+      
       final db = await database;
       await db.rawQuery('SELECT 1');
       return true;
     } catch (e) {
-      print('Database readiness check failed: $e');
+      print('❌ Database readiness check failed: $e');
       return false;
+    }
+  }
+
+  // Get platform information for debugging
+  String getPlatformInfo() {
+    if (kIsWeb) {
+      return 'Web (SQLite not supported)';
+    }
+    
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return 'Android (Native SQLite)';
+      case TargetPlatform.iOS:
+        return 'iOS (Native SQLite)';
+      case TargetPlatform.windows:
+        return 'Windows (SQLite FFI)';
+      case TargetPlatform.macOS:
+        return 'macOS (SQLite FFI)';
+      case TargetPlatform.linux:
+        return 'Linux (SQLite FFI)';
+      default:
+        return 'Unknown Platform';
     }
   }
 
   // ===== MEDICINE CRUD OPERATIONS =====
   Future<int> insertMedicine(Medicine medicine) async {
     try {
+      print('💊 Inserting medicine: ${medicine.name}');
       final db = await database;
       final id = await db.insert('medicines', medicine.toMap());
-      print('💊 Medicine added: ${medicine.name} (ID: $id)');
+      print('✅ Medicine added with ID: $id');
       return id;
     } catch (e) {
       print('❌ Error inserting medicine: $e');
@@ -187,7 +275,7 @@ class DatabaseService {
         orderBy: 'isStarred DESC, name ASC',
       );
       final medicines = List.generate(maps.length, (i) => Medicine.fromMap(maps[i]));
-      print('📋 Loaded ${medicines.length} medicines');
+      print('📋 Retrieved ${medicines.length} medicines');
       return medicines;
     } catch (e) {
       print('❌ Error getting medicines: $e');
@@ -411,6 +499,33 @@ class DatabaseService {
       print('🧹 All data cleared');
     } catch (e) {
       print('❌ Error clearing data: $e');
+      rethrow;
+    }
+  }
+
+  // Reset database (for debugging)
+  Future<void> resetDatabase() async {
+    try {
+      print('🔄 Resetting database...');
+      
+      if (_database != null) {
+        await _database!.close();
+      }
+      
+      _database = null;
+      _isInitialized = false;
+      
+      // Delete database file and recreate
+      final dbPath = await getDatabasesPath();
+      final path = join(dbPath, 'medicine_tracker.db');
+      await deleteDatabase(path);
+      
+      // Reinitialize
+      await initialize();
+      
+      print('✅ Database reset completed');
+    } catch (e) {
+      print('❌ Error resetting database: $e');
       rethrow;
     }
   }

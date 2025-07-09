@@ -31,7 +31,6 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
   String? _imagePath;
   bool _isStarred = false;
   bool _isLoading = false;
-  bool _hasAllergyWarning = false;
 
   @override
   void initState() {
@@ -39,8 +38,6 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
     if (widget.medicine != null) {
       _populateForm();
     }
-    // Listen to name changes to check for allergies
-    _nameController.addListener(_checkAllergyWarning);
   }
 
   void _populateForm() {
@@ -54,23 +51,6 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
     _expirationDate = medicine.expirationDate;
     _imagePath = medicine.imagePath;
     _isStarred = medicine.isStarred;
-  }
-
-  Future<void> _checkAllergyWarning() async {
-    final medicineName = _nameController.text.trim();
-    if (medicineName.isNotEmpty) {
-      try {
-        final hasAllergy = await _databaseService.checkAllergyWarning(medicineName);
-        if (mounted) {
-          setState(() => _hasAllergyWarning = hasAllergy);
-        }
-      } catch (e) {
-        // Ignore allergy check errors
-        setState(() => _hasAllergyWarning = false);
-      }
-    } else {
-      setState(() => _hasAllergyWarning = false);
-    }
   }
 
   @override
@@ -112,9 +92,6 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Allergy Warning Banner
-                    if (_hasAllergyWarning) _buildAllergyWarning(),
-                    
                     // Medicine Image
                     _buildImageSection(),
                     const SizedBox(height: 24),
@@ -122,13 +99,10 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
                     // Medicine Name
                     TextFormField(
                       controller: _nameController,
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         labelText: 'Medicine Name *',
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.medication),
-                        suffixIcon: _hasAllergyWarning 
-                            ? const Icon(Icons.warning, color: Colors.red)
-                            : null,
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.medication),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
@@ -199,26 +173,17 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: _hasAllergyWarning ? _showAllergyConfirmation : _saveMedicine,
+                        onPressed: _saveMedicine,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _hasAllergyWarning ? Colors.orange : Colors.blue,
+                          backgroundColor: Colors.blue,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (_hasAllergyWarning) ...[
-                              const Icon(Icons.warning, size: 20),
-                              const SizedBox(width: 8),
-                            ],
-                            Text(
-                              isEditing ? 'Update Medicine' : 'Add Medicine',
-                              style: const TextStyle(fontSize: 16),
-                            ),
-                          ],
+                        child: Text(
+                          isEditing ? 'Update Medicine' : 'Add Medicine',
+                          style: const TextStyle(fontSize: 16),
                         ),
                       ),
                     ),
@@ -226,35 +191,6 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
                 ),
               ),
             ),
-    );
-  }
-
-  Widget _buildAllergyWarning() {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.red, width: 2),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.warning, color: Colors.red, size: 24),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              '⚠️ คำเตือน: คุณมีประวัติแพ้ยานี้!\nกรุณาตรวจสอบความปลอดภัยก่อนใช้',
-              style: TextStyle(
-                color: Colors.red,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -402,35 +338,22 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
         return 'กับอาหาร';
       case MealTiming.anytime:
         return 'เวลาไหนก็ได้';
-      default:
-        return 'เวลาไหนก็ได้';
     }
   }
 
   Future<void> _pickImage() async {
-    try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 80,
-      );
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 80,
+    );
 
-      if (pickedFile != null) {
-        setState(() {
-          _imagePath = pickedFile.path;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error picking image: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    if (pickedFile != null) {
+      setState(() {
+        _imagePath = pickedFile.path;
+      });
     }
   }
 
@@ -446,46 +369,6 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
       setState(() {
         _expirationDate = selectedDate;
       });
-    }
-  }
-
-  Future<void> _showAllergyConfirmation() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.warning, color: Colors.red),
-            SizedBox(width: 8),
-            Text('คำเตือนการแพ้ยา'),
-          ],
-        ),
-        content: Text(
-          'คุณมีประวัติแพ้ยา "${_nameController.text.trim()}" อยู่ในระบบ\n\n'
-          'คุณแน่ใจหรือไม่ว่าต้องการเพิ่มยานี้?\n\n'
-          'กรุณาปรึกษาแพทย์หรือเภสัชกรก่อนใช้',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('ยกเลิก'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(
-              backgroundColor: Colors.red.withOpacity(0.1),
-            ),
-            child: const Text(
-              'เพิ่มต่อไป',
-              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      _saveMedicine();
     }
   }
 
@@ -523,24 +406,8 @@ class _AddEditMedicineScreenState extends State<AddEditMedicineScreen> {
 
       if (widget.medicine == null) {
         await _databaseService.insertMedicine(medicine);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${medicine.name} added successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
       } else {
         await _databaseService.updateMedicine(medicine);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${medicine.name} updated successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
       }
 
       if (mounted) {

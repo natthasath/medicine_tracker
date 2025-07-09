@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/medicine.dart';
-import '../services/storage_service.dart';
+import '../services/database_service.dart';
 import 'add_edit_medicine_screen.dart';
 import '../widgets/medicine_card.dart';
 
@@ -12,7 +12,7 @@ class MedicineListScreen extends StatefulWidget {
 }
 
 class _MedicineListScreenState extends State<MedicineListScreen> {
-  final StorageService _storageService = StorageService();
+  final DatabaseService _databaseService = DatabaseService();
   final TextEditingController _searchController = TextEditingController();
   List<Medicine> _medicines = [];
   List<Medicine> _filteredMedicines = [];
@@ -34,28 +34,40 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
   Future<void> _loadMedicines() async {
     setState(() => _isLoading = true);
     try {
-      // Check if storage is ready first
-      final isReady = await _storageService.isDatabaseReady();
-      if (!isReady) {
-        throw Exception('Storage is not ready');
-      }
+      print('📱 Loading medicines from database...');
       
-      final medicines = await _storageService.getAllMedicines();
+      // Load medicines directly from database
+      final medicines = await _databaseService.getAllMedicines();
+      
       setState(() {
         _medicines = medicines;
         _filteredMedicines = medicines;
         _isLoading = false;
       });
+      
       print('✅ Medicines loaded successfully: ${medicines.length} items');
-      print('📁 Storage type: ${_storageService.getStorageInfo()}');
+      print('📁 Storage: SQLite Database (Persistent)');
+      
     } catch (e) {
       print('❌ Error loading medicines: $e');
       setState(() => _isLoading = false);
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Storage error: $e'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Database Error'),
+                const SizedBox(height: 4),
+                Text('$e'),
+                const SizedBox(height: 8),
+                const Text('Try restarting the app or check Settings > Debug'),
+              ],
+            ),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
             action: SnackBarAction(
               label: 'Retry',
               textColor: Colors.white,
@@ -85,14 +97,9 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('My Medicines'),
-            FutureBuilder<String>(
-              future: Future.value(_storageService.getStorageInfo()),
-              builder: (context, snapshot) {
-                return Text(
-                  snapshot.data ?? 'Loading...',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
-                );
-              },
+            Text(
+              '🗄️ ${_databaseService.getPlatformInfo()}',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
             ),
           ],
         ),
@@ -118,7 +125,16 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Loading medicines from database...'),
+                ],
+              ),
+            )
           : _filteredMedicines.isEmpty
               ? _buildEmptyState()
               : ListView.builder(
@@ -166,6 +182,14 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                 : 'กดปุ่ม + เพื่อเพิ่มยาใหม่',
             style: const TextStyle(
               fontSize: 14,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            '🗄️ SQLite Database (Persistent)',
+            style: TextStyle(
+              fontSize: 12,
               color: Colors.grey,
             ),
           ),
@@ -219,7 +243,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
 
     if (confirmed == true) {
       try {
-        await _storageService.deleteMedicine(medicine.id!);
+        await _databaseService.deleteMedicine(medicine.id!);
         _loadMedicines();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -259,7 +283,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
         updatedAt: DateTime.now(),
       );
       
-      await _storageService.updateMedicine(updatedMedicine);
+      await _databaseService.updateMedicine(updatedMedicine);
       _loadMedicines();
     } catch (e) {
       if (mounted) {

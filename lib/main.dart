@@ -2,38 +2,50 @@ import 'package:flutter/material.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'screens/main_navigation_screen.dart';
-import 'services/storage_service.dart';
+import 'services/database_service.dart';
 
 void main() async {
+  // CRITICAL: Must be called first
   WidgetsFlutterBinding.ensureInitialized();
   
   print('🚀 Starting Medicine Tracker App...');
   
   try {
-    // Initialize storage service (will try database first, fallback to memory)
-    print('🗄️ Initializing storage...');
-    await StorageService().initialize();
-    print('✅ Storage initialized successfully');
+    // Initialize database service
+    print('🗄️ Initializing database...');
+    final databaseService = DatabaseService();
+    
+    // Show platform information
+    print('🖥️ Platform: ${databaseService.getPlatformInfo()}');
+    
+    await databaseService.initialize();
+    
+    // Test database
+    final isReady = await databaseService.isDatabaseReady();
+    print('🔍 Database ready: $isReady');
+    
+    if (isReady) {
+      final medicines = await databaseService.getAllMedicines();
+      print('📊 Found ${medicines.length} medicines in database');
+      print('✅ Database initialization successful');
+    } else {
+      print('⚠️ Database may not be fully ready');
+    }
     
     // Initialize timezone data
     print('⏰ Initializing timezone data...');
     tz.initializeTimeZones();
+    tz.setLocalLocation(tz.getLocation('Asia/Bangkok'));
+    print('✅ Timezone initialized');
     
-    // Set local timezone
-    final String timeZoneName = 'Asia/Bangkok';
-    tz.setLocalLocation(tz.getLocation(timeZoneName));
-    print('✅ Timezone set to: $timeZoneName');
   } catch (e) {
     print('❌ Initialization error: $e');
-    // Continue anyway, don't block the app
+    print('🔄 App will continue but may have limited functionality');
   }
   
-  print('📱 App ready');
-  print('🎯 Running app...');
+  print('📱 Starting app...');
   runApp(const MedicineTrackerApp());
 }
-
-// Remove the _initializeDatabase function as it's no longer needed
 
 class MedicineTrackerApp extends StatelessWidget {
   const MedicineTrackerApp({super.key});

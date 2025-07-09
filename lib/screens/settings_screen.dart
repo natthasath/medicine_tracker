@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/database_service.dart';
-// import '../services/notification_service.dart'; // Commented out
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -31,6 +30,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 24),
                 _buildSectionHeader('การแจ้งเตือน'),
                 _buildNotificationSection(),
+                
+                const SizedBox(height: 24),
+                _buildSectionHeader('ระบบฐานข้อมูล'),
+                _buildDatabaseSection(),
                 
                 const SizedBox(height: 24),
                 _buildSectionHeader('เกี่ยวกับแอป'),
@@ -105,6 +108,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildDatabaseSection() {
+    return Card(
+      child: Column(
+        children: [
+          const ListTile(
+            leading: Icon(Icons.storage, color: Colors.green),
+            title: Text('ระบบฐานข้อมูล'),
+            subtitle: Text('🗄️ SQLite Database (Persistent)'),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.health_and_safety, color: Colors.orange),
+            title: const Text('ตรวจสอบฐานข้อมูล'),
+            subtitle: const Text('ตรวจสอบสถานะการทำงานของฐานข้อมูล'),
+            onTap: _checkDatabaseHealth,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAboutSection() {
     return Card(
       child: Column(
@@ -130,7 +154,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       setState(() => _isLoading = true);
       
-      // Get all data
+      // Get all data from database
       final medicines = await _databaseService.getAllMedicines();
       final treatments = await _databaseService.getAllTreatmentHistory();
       final allergies = await _databaseService.getAllAllergies();
@@ -141,15 +165,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'allergies': allergies.map((a) => a.toMap()).toList(),
         'exportDate': DateTime.now().toIso8601String(),
         'version': '1.0.0',
+        'storageType': 'SQLite Database',
       };
       
-      // In a real app, you would save this to a file or share it
       if (mounted) {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('ส่งออกข้อมูลสำเร็จ'),
-            content: Text('ข้อมูลทั้งหมด ${medicines.length} ยา, ${treatments.length} ประวัติการรักษา, และ ${allergies.length} รายการแพ้ยา'),
+            content: Text(
+              'ข้อมูลทั้งหมด:\n'
+              '• ${medicines.length} ยา\n'
+              '• ${treatments.length} ประวัติการรักษา\n'
+              '• ${allergies.length} รายการแพ้ยา\n\n'
+              '🗄️ ข้อมูลจาก SQLite Database'
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
@@ -174,7 +204,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _importData() async {
-    // In a real app, you would pick a file and import data
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -209,30 +238,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       try {
         setState(() => _isLoading = true);
         
-        // Delete all data
-        final medicines = await _databaseService.getAllMedicines();
-        for (final medicine in medicines) {
-          if (medicine.id != null) {
-            await _databaseService.deleteMedicine(medicine.id!);
-          }
-        }
-        
-        final treatments = await _databaseService.getAllTreatmentHistory();
-        for (final treatment in treatments) {
-          if (treatment.id != null) {
-            await _databaseService.deleteTreatmentHistory(treatment.id!);
-          }
-        }
-        
-        final allergies = await _databaseService.getAllAllergies();
-        for (final allergy in allergies) {
-          if (allergy.id != null) {
-            await _databaseService.deleteAllergy(allergy.id!);
-          }
-        }
-        
-        // Cancel all notifications (DISABLED)
-        // await NotificationService().cancelAllNotifications();
+        // Clear all data from database
+        await _databaseService.clearAllData();
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -254,6 +261,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } finally {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _checkDatabaseHealth() async {
+    try {
+      setState(() => _isLoading = true);
+      
+      // Test database operations
+      final isReady = await _databaseService.isDatabaseReady();
+      final medicines = await _databaseService.getAllMedicines();
+      final treatments = await _databaseService.getAllTreatmentHistory();
+      final allergies = await _databaseService.getAllAllergies();
+      
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                SizedBox(width: 8),
+                Text('สถานะฐานข้อมูล'),
+              ],
+            ),
+            content: Text(
+              '✅ ฐานข้อมูลทำงานปกติ\n\n'
+              'พร้อมใช้งาน: ${isReady ? "✅" : "❌"}\n'
+              'ข้อมูลในระบบ:\n'
+              '• ยา: ${medicines.length} รายการ\n'
+              '• ประวัติการรักษา: ${treatments.length} รายการ\n'
+              '• รายการแพ้ยา: ${allergies.length} รายการ\n\n'
+              '🗄️ SQLite Database (Persistent)'
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('ตกลง'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.error, color: Colors.red),
+                SizedBox(width: 8),
+                Text('ปัญหาฐานข้อมูล'),
+              ],
+            ),
+            content: Text(
+              '❌ เกิดข้อผิดพลาดกับฐานข้อมูล\n\n'
+              'รายละเอียด: $e\n\n'
+              'แนะนำให้รีสตาร์ทแอป'
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('ตกลง'),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -306,7 +383,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             '• ไม่มีการรวบรวมข้อมูลส่วนบุคคล\n'
             '• ข้อมูลจะหายไปเมื่อคุณลบแอป\n'
             '• คุณสามารถส่งออกข้อมูลเพื่อสำรองได้\n\n'
-            'แอปนี้ใช้สำหรับบันทึกข้อมูลยาส่วนตัวเท่านั้น ไม่ใช่คำแนะนำทางการแพทย์',
+            'แอปนี้ใช้สำหรับบันทึกข้อมูลยาส่วนตัวเท่านั้น ไม่ใช่คำแนะนำทางการแพทย์\n\n'
+            '🗄️ ข้อมูลเก็บใน SQLite Database บนเครื่องของคุณ',
           ),
         ),
         actions: [
